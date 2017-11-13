@@ -13,8 +13,9 @@ namespace LEM1
         {
             DataTable data =FileOperation.ReadDataFile(@"C:\Users\Naresh\Desktop\test1.txt");
 
-            Rules rul = new Rules();
-            rul.CheckInitialCondition(data);
+            Rules rul = new Rules(data);
+            rul.CheckInitialCondition();
+            rul.ComputeSingleGlobalCovering();
         }
     }
 }

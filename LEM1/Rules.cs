@@ -10,19 +10,88 @@ namespace LEM1
 {
     public class Rules
     {
-        public void CheckInitialCondition(DataTable data)
+        public DataTable SourceData { get; set; }
+        public Dictionary<string,List<string>> SingleCovering { get; set; }
+        public Rules(DataTable data)
+        {
+            this.SourceData = data;
+            SingleCovering = new Dictionary<string, List<string>>();
+        }
+        public bool CheckInitialCondition()
+        {
+
+            //var tx =GetDecisions(Data);
+
+            return CheckAStarLessThanDStar(SourceData);
+        }
+        public void ComputeSingleGlobalCovering()
+        {
+            var colCount = SourceData.Columns.Count - 1;
+            foreach (string concept in SourceData.AsEnumerable().Select(t => t[colCount - 1]).Distinct().ToList())
+            {
+                var conceptData = SourceData.Copy();
+                //Update Decision Values to Naresh except for current concept
+                conceptData.AsEnumerable().Where(row => row.Field<string>(colCount - 1) != concept).ToList().ForEach(v => v.SetField<string>(colCount - 1, "NARESH"));
+                GetNextValidSets(conceptData);
+            }
+
+        }
+        private void GetNextValidSets(DataTable data)
+        {
+            var colCount = data.Columns.Count - 1;
+            if (colCount == 3)
+                return;
+            for (int i = 0; i <= colCount-2; i++)
+            {
+                var tempData = data.Copy();
+                tempData.Columns.RemoveAt(i);
+                tempData.AcceptChanges();
+                var tempColCount = tempData.Columns.Count - 1;
+                if (CheckAStarLessThanDStar(tempData))
+                {
+                    var tempRule = tempData.Columns.Cast<DataColumn>().Select(x => x.ColumnName).ToList().GetRange(0, tempData.Columns.Count - 2);
+                    var conceptName =tempData.AsEnumerable().Select(t => t[tempColCount - 1]).Distinct().ToList().OfType<string>().Where(v=>v!="NARESH").FirstOrDefault();
+
+                    if (SingleCovering.ContainsKey(conceptName))
+                        SingleCovering.Remove(conceptName);
+
+                    SingleCovering.Add(conceptName, tempRule);
+                    GetNextValidSets(tempData);
+                    break;
+                }
+
+            }
+            return;
+        }
+
+        private bool CheckAStarLessThanDStar(DataTable data)
         {
             DataTable temp = data.Copy();
             IEqualityComparer<DataRow> comparer = new RowChecker();
             List<List<string>> aStar = new List<List<string>>();
+            var colCount = data.Columns.Count-1;
+            bool intlCndtn = true;
 
+            //Retrieve AStar
             foreach (var row in data.AsEnumerable().Distinct(comparer))
             {
                 var same = temp.AsEnumerable().Where(t => comparer.Equals(t, row)).Select(t => t.Field<string>("ID")).ToList();
-                if(same.Count>0)
+                if (same.Count > 0)
                     aStar.Add(same);
             }
-            var tx =GetDecisions(data);
+            //Check A*<=d*
+            foreach (var sets in aStar)
+            {
+                var diff = data.AsEnumerable().Where(row => sets.Exists(val => val == row.Field<string>(colCount))).
+                    Select(id => id.Field<string>(colCount - 1)).Distinct().ToList();
+                if (diff.Count > 1)
+                {
+                    intlCndtn = false;
+                    break;
+                }
+            }
+
+            return intlCndtn;
         }
         private List<List<string>> GetDecisions(DataTable data)
         {
