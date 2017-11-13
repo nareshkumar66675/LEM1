@@ -11,7 +11,7 @@ namespace LEM1
     {
         static void Main(string[] args)
         {
-            DataTable data =FileOperation.ReadDataFile(@"C:\Users\Naresh\Desktop\test1.txt");
+            DataTable data =FileOperation.ReadDataFile(@"C:\Users\Naresh\Desktop\test3.txt");
 
             Rules rul = new Rules(data);
             rul.CheckInitialCondition();
