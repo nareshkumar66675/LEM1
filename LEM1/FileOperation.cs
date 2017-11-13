@@ -45,16 +45,18 @@ namespace LEM1
         }
         private static void ParseHeaders(string line,DataTable data)
         {
-            var colHeaders = line.Trim().Replace('<', ' ').Replace('>', ' ').Split(new char[0], StringSplitOptions.RemoveEmptyEntries).ToList();
-
+            var colHeaders = line.Trim().Replace('[', ' ').Replace(']', ' ').Split(new char[0], StringSplitOptions.RemoveEmptyEntries).ToList();
             colHeaders.ForEach(t => data.Columns.Add(new DataColumn(t, typeof(string))));
+            data.Columns.Add(new DataColumn("ID", typeof(string)));
         }
         private static void ParseLine(string line, DataTable data)
         {
-            var values = line.Trim().Split(new char[0]);
-            if (values.Length == data.Columns.Count)
+            var values = line.Trim().Split(new char[0]).ToList();
+            values.Add(data.Rows.Count + 1+"");
+
+            if (values.Count == data.Columns.Count)
             {
-                data.Rows.Add(values);
+                data.Rows.Add(values.ToArray());
             }
             else
                 throw new Exception("Column and Data count Mismatch");
