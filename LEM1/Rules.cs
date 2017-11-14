@@ -11,7 +11,8 @@ namespace LEM1
     public class Rules
     {
         public DataTable SourceData { get; set; }
-        public Dictionary<string,List<string>> SingleCovering { get; set; }
+        public Dictionary<string,List<string>> lowerSingleCovering { get; set; }
+        public Dictionary<string, List<string>> upperSingleCovering { get; set; }
 
         private List<List<string>> aStar = new List<List<string>>();
         private Dictionary<string, List<string>> dStar = new Dictionary<string, List<string>>();
@@ -22,37 +23,78 @@ namespace LEM1
         public Rules(DataTable data)
         {
             this.SourceData = data;
-            SingleCovering = new Dictionary<string, List<string>>();
+            lowerSingleCovering = new Dictionary<string, List<string>>();
         }
         public bool CheckInitialCondition()
         {
             bool intlCondition = true;
             GetDecisions(SourceData);
+            this.aStar = ComputeAStar(SourceData);
             if (CheckAStarLessThanDStar(SourceData))
             {
                 Console.WriteLine("A*<=d*");
             }
             else
             {
+                Console.WriteLine("A*!<=d*");
                 intlCondition = false;
             }
             FindApproximations();
             return intlCondition;
         }
+
+        private List<List<string>> ComputeAStar(DataTable sourceData)
+        {
+            DataTable temp = sourceData.Copy();
+            IEqualityComparer<DataRow> comparer = new RowChecker();
+            var colCount = sourceData.Columns.Count - 1;
+            List<List<string>> tempAStar = new List<List<string>>();
+            //Retrieve AStar
+            foreach (var row in sourceData.AsEnumerable().Distinct(comparer))
+            {
+                var same = temp.AsEnumerable().Where(t => comparer.Equals(t, row)).Select(t => t.Field<string>("ID")).ToList();
+                if (same.Count > 0)
+                    tempAStar.Add(same);
+            }
+            return tempAStar;
+        }
+
         public void ComputeSingleGlobalCovering()
         {
             var colCount = SourceData.Columns.Count - 1;
-            foreach (string concept in SourceData.AsEnumerable().Select(t => t[colCount - 1]).Distinct().ToList())
+            foreach (var lower in lowerApprox)
             {
-                var conceptData = SourceData.Copy();
-                //Update Decision Values to Naresh except for current concept
-                conceptData.AsEnumerable().Where(row => row.Field<string>(colCount - 1) != concept).ToList().
-                    ForEach(v => v.SetField<string>(colCount - 1, "NARESH"));
-                GetNextValidSets(conceptData);
+                KeyValuePair<string, List<string>> upper = new KeyValuePair<string, List<string>>();
+                if (upperApprox.ContainsKey(lower.Key))
+                    upper = upperApprox.Where(t => t.Key == lower.Key).FirstOrDefault();
+
+                //Parallel.Invoke(
+                //    () => 
+                //    {
+                        ComputeCovering(SourceData, lower,lowerSingleCovering);
+                    //},
+                    //() => 
+                    //{
+                        ComputeCovering(SourceData, upper,upperSingleCovering);
+                    //}
+                    //);
             }
+
             int f = 354234;
         }
-        private void GetNextValidSets(DataTable data)
+        private void ComputeCovering(DataTable data,KeyValuePair<string,List<string>> concept,Dictionary<string, List<string>> rules)
+        {
+            if (concept.Value == null || !concept.Value.Any())
+                return;
+            var conceptData = data.Copy();
+            var colCount = data.Columns.Count - 1;
+            //Update Decision Values to Naresh except for current concept
+            var temp = conceptData.AsEnumerable().Where(row => concept.Value.Exists(val => val == row.Field<string>(colCount - 0))).ToList();
+            conceptData.AsEnumerable().Except(temp).ToList().
+                ForEach(v => v.SetField<string>(colCount - 1, "NARESH"));
+            GetNextValidSets(conceptData,rules);
+        }
+        private void GetNextValidSets(DataTable data, Dictionary<string, List<string>> rules)
         {
             var colCount = data.Columns.Count - 1;
             if (colCount == 3)
@@ -70,11 +112,11 @@ namespace LEM1
                     var conceptName =tempData.AsEnumerable().Select(t => t[tempColCount - 1]).Distinct().ToList()
                         .OfType<string>().Where(v=>v!="NARESH").FirstOrDefault();
 
-                    if (SingleCovering.ContainsKey(conceptName))
-                        SingleCovering.Remove(conceptName);
+                    if (rules.ContainsKey(conceptName))
+                        rules.Remove(conceptName);
 
-                    SingleCovering.Add(conceptName, tempRule);
-                    GetNextValidSets(tempData);
+                    rules.Add(conceptName, tempRule);
+                    GetNextValidSets(tempData,rules);
                     break;
                 }
             }
@@ -100,20 +142,14 @@ namespace LEM1
         }
         private bool CheckAStarLessThanDStar(DataTable data)
         {
-            DataTable temp = data.Copy();
             IEqualityComparer<DataRow> comparer = new RowChecker();
             var colCount = data.Columns.Count-1;
             bool intlCndtn = true;
 
             //Retrieve AStar
-            foreach (var row in data.AsEnumerable().Distinct(comparer))
-            {
-                var same = temp.AsEnumerable().Where(t => comparer.Equals(t, row)).Select(t => t.Field<string>("ID")).ToList();
-                if (same.Count > 0)
-                    this.aStar.Add(same);
-            }
+            var tempAstar =  ComputeAStar(data);
             //Check A*<=d*
-            foreach (var sets in aStar)
+            foreach (var sets in tempAstar)
             {
                 var diff = data.AsEnumerable().Where(row => sets.Exists(val => val == row.Field<string>(colCount))).
                     Select(decisionName => decisionName.Field<string>(colCount - 1)).Distinct().ToList();
