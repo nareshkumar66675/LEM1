@@ -11,8 +11,9 @@ namespace LEM1
     {
         static void Main(string[] args)
         {
-            DataTable data =FileOperation.ReadDataFile(@"C:\Users\Naresh\Desktop\test3.txt");
-
+            DataTable data =FileOperation.ReadDataFile(@"C:\Users\Naresh\Desktop\test.txt");
+            Discretize discretize = new Discretize(data);
+            discretize.Discretization();
             Rules rul = new Rules(data);
             rul.CheckInitialCondition();
             rul.ComputeSingleGlobalCovering();

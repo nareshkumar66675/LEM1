@@ -8,11 +8,16 @@ using System.Threading.Tasks;
 
 namespace LEM1
 {
+    public enum RuleSet
+    {
+        Certain,
+        Possible
+    }
     public class Rules
     {
         public DataTable SourceData { get; set; }
-        public Dictionary<string,List<string>> lowerSingleCovering { get; set; }
-        public Dictionary<string, List<string>> upperSingleCovering { get; set; }
+        public Dictionary<string,List<string>> certainRules { get; set; }
+        public Dictionary<string, List<string>> possibleRules { get; set; }
 
         private List<List<string>> aStar = new List<List<string>>();
         private Dictionary<string, List<string>> dStar = new Dictionary<string, List<string>>();
@@ -23,7 +28,8 @@ namespace LEM1
         public Rules(DataTable data)
         {
             this.SourceData = data;
-            lowerSingleCovering = new Dictionary<string, List<string>>();
+            certainRules = new Dictionary<string, List<string>>();
+            possibleRules = new Dictionary<string, List<string>>();
         }
         public bool CheckInitialCondition()
         {
@@ -43,6 +49,28 @@ namespace LEM1
             return intlCondition;
         }
 
+        public void ComputeSingleGlobalCovering()
+        {
+            var colCount = SourceData.Columns.Count - 1;
+            foreach (var lower in lowerApprox)
+            {
+                KeyValuePair<string, List<string>> upper = new KeyValuePair<string, List<string>>();
+                if (upperApprox.ContainsKey(lower.Key))
+                    upper = upperApprox.Where(t => t.Key == lower.Key).FirstOrDefault();
+
+                //Parallel.Invoke(
+                //    () => 
+                //    {
+                //ComputeCovering(SourceData, lower,lowerSingleCovering);
+                //},
+                //() => 
+                //{
+                ComputeCovering(SourceData, upper, RuleSet.Possible);
+                //}
+                //);
+            }
+        }
+
         private List<List<string>> ComputeAStar(DataTable sourceData)
         {
             DataTable temp = sourceData.Copy();
@@ -59,30 +87,7 @@ namespace LEM1
             return tempAStar;
         }
 
-        public void ComputeSingleGlobalCovering()
-        {
-            var colCount = SourceData.Columns.Count - 1;
-            foreach (var lower in lowerApprox)
-            {
-                KeyValuePair<string, List<string>> upper = new KeyValuePair<string, List<string>>();
-                if (upperApprox.ContainsKey(lower.Key))
-                    upper = upperApprox.Where(t => t.Key == lower.Key).FirstOrDefault();
-
-                //Parallel.Invoke(
-                //    () => 
-                //    {
-                        ComputeCovering(SourceData, lower,lowerSingleCovering);
-                    //},
-                    //() => 
-                    //{
-                        ComputeCovering(SourceData, upper,upperSingleCovering);
-                    //}
-                    //);
-            }
-
-            int f = 354234;
-        }
-        private void ComputeCovering(DataTable data,KeyValuePair<string,List<string>> concept,Dictionary<string, List<string>> rules)
+        private void ComputeCovering(DataTable data,KeyValuePair<string,List<string>> concept,RuleSet ruleType)
         {
             if (concept.Value == null || !concept.Value.Any())
                 return;
@@ -90,11 +95,18 @@ namespace LEM1
             var colCount = data.Columns.Count - 1;
             //Update Decision Values to Naresh except for current concept
             var temp = conceptData.AsEnumerable().Where(row => concept.Value.Exists(val => val == row.Field<string>(colCount - 0))).ToList();
+
+            if (ruleType == RuleSet.Possible)
+            {
+                var te= temp.AsEnumerable().Where(row => row.Field<string>(colCount - 1) != concept.Key).ToList();
+                te.ForEach(t => temp.Remove(t));
+            }
+
             conceptData.AsEnumerable().Except(temp).ToList().
-                ForEach(v => v.SetField<string>(colCount - 1, "NARESH"));
-            GetNextValidSets(conceptData,rules);
+                ForEach(v => v.SetField(colCount - 1, "NARESH"));
+            GetNextValidSets(conceptData, ruleType);
         }
-        private void GetNextValidSets(DataTable data, Dictionary<string, List<string>> rules)
+        private void GetNextValidSets(DataTable data, RuleSet ruleType)
         {
             var colCount = data.Columns.Count - 1;
             if (colCount == 3)
@@ -111,12 +123,22 @@ namespace LEM1
                         .GetRange(0, tempData.Columns.Count - 2);
                     var conceptName =tempData.AsEnumerable().Select(t => t[tempColCount - 1]).Distinct().ToList()
                         .OfType<string>().Where(v=>v!="NARESH").FirstOrDefault();
+                    if(RuleSet.Certain == ruleType)
+                    {
+                        if (certainRules.ContainsKey(conceptName))
+                            certainRules.Remove(conceptName);
 
-                    if (rules.ContainsKey(conceptName))
-                        rules.Remove(conceptName);
+                        certainRules.Add(conceptName, tempRule);
+                        GetNextValidSets(tempData, RuleSet.Certain);
+                    }
+                    else
+                    {
+                        if (possibleRules.ContainsKey(conceptName))
+                            possibleRules.Remove(conceptName);
 
-                    rules.Add(conceptName, tempRule);
-                    GetNextValidSets(tempData,rules);
+                        possibleRules.Add(conceptName, tempRule);
+                        GetNextValidSets(tempData, RuleSet.Possible);
+                    }
                     break;
                 }
             }
