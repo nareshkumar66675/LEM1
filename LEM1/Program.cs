@@ -13,7 +13,7 @@ namespace LEM1
         {
             DataTable data =FileOperation.ReadDataFile(@"C:\Users\Naresh\Desktop\test.txt");
             Discretize discretize = new Discretize(data);
-            discretize.Discretization();
+            data = discretize.Discretization();
             Rules rul = new Rules(data);
             rul.CheckInitialCondition();
             rul.ComputeSingleGlobalCovering();

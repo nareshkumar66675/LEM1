@@ -57,17 +57,16 @@ namespace LEM1
                 KeyValuePair<string, List<string>> upper = new KeyValuePair<string, List<string>>();
                 if (upperApprox.ContainsKey(lower.Key))
                     upper = upperApprox.Where(t => t.Key == lower.Key).FirstOrDefault();
-
-                //Parallel.Invoke(
-                //    () => 
-                //    {
-                //ComputeCovering(SourceData, lower,lowerSingleCovering);
-                //},
-                //() => 
-                //{
-                ComputeCovering(SourceData, upper, RuleSet.Possible);
-                //}
-                //);
+                Parallel.Invoke(
+                        () =>
+                            {
+                                ComputeCovering(SourceData, lower, RuleSet.Certain);
+                            },
+                        () =>
+                            {
+                                ComputeCovering(SourceData, upper, RuleSet.Possible);
+                            }
+                        );
             }
         }
 
@@ -185,12 +184,6 @@ namespace LEM1
         }
         private void GetDecisions(DataTable data)
         {
-            //var temp = from t in data.AsEnumerable()
-            //           select new
-            //           {
-            //               Decision = t.Field<int>(t.Table.Columns.Count - 1),
-            //               ID = t.Field<int>(t.Table.Columns.Count)
-            //           };
             var colCount= data.Columns.Count - 1;
             foreach (string conceptName in data.AsEnumerable().Select(t=>t[colCount-1]).Distinct().ToList())
             {
