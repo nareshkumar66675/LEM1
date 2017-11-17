@@ -103,9 +103,9 @@ namespace LEM1
 
             conceptData.AsEnumerable().Except(temp).ToList().
                 ForEach(v => v.SetField(colCount - 1, "NARESH"));
-            GetNextValidSets(conceptData, ruleType);
+            GetNextValidSets(conceptData,concept, ruleType);
         }
-        private void GetNextValidSets(DataTable data, RuleSet ruleType)
+        private void GetNextValidSets(DataTable data, KeyValuePair<string, List<string>> concept, RuleSet ruleType)
         {
             var colCount = data.Columns.Count - 1;
             if (colCount == 3)
@@ -116,19 +116,21 @@ namespace LEM1
                 tempData.Columns.RemoveAt(i);
                 tempData.AcceptChanges();
                 var tempColCount = tempData.Columns.Count - 1;
-                if (CheckAStarLessThanDStar(tempData))
+                
+                if (CheckAStarLessThanDApprox(tempData,concept))
                 {
                     var tempRule = tempData.Columns.Cast<DataColumn>().Select(x => x.ColumnName).ToList()
                         .GetRange(0, tempData.Columns.Count - 2);
-                    var conceptName =tempData.AsEnumerable().Select(t => t[tempColCount - 1]).Distinct().ToList()
-                        .OfType<string>().Where(v=>v!="NARESH").FirstOrDefault();
-                    if(RuleSet.Certain == ruleType)
+                    var conceptName = concept.Key; //tempData.AsEnumerable().Select(t => t[tempColCount - 1]).Distinct().ToList()
+                        //.OfType<string>().Where(v=>v!="NARESH").FirstOrDefault();
+                    //CheckAStarLessThanDApprox(tempData, concept);
+                    if (RuleSet.Certain == ruleType)
                     {
                         if (certainRules.ContainsKey(conceptName))
                             certainRules.Remove(conceptName);
 
                         certainRules.Add(conceptName, tempRule);
-                        GetNextValidSets(tempData, RuleSet.Certain);
+                        GetNextValidSets(tempData,concept, RuleSet.Certain);
                     }
                     else
                     {
@@ -136,7 +138,7 @@ namespace LEM1
                             possibleRules.Remove(conceptName);
 
                         possibleRules.Add(conceptName, tempRule);
-                        GetNextValidSets(tempData, RuleSet.Possible);
+                        GetNextValidSets(tempData,concept, RuleSet.Possible);
                     }
                     break;
                 }
@@ -160,6 +162,18 @@ namespace LEM1
                 lowerApprox.Add(concept.Key, tempLowList);
                 upperApprox.Add(concept.Key, tempHighList);
             }
+        }
+        private bool CheckAStarLessThanDApprox(DataTable data, KeyValuePair<string, List<string>> concept)
+        {
+            var tempAStar=ComputeAStar(data);
+
+            foreach (var set in tempAStar)
+            {
+                if (set.Except(concept.Value).Any() && set.Intersect(concept.Value).Any())
+                    return false;
+            }
+
+            return true;
         }
         private bool CheckAStarLessThanDStar(DataTable data)
         {
