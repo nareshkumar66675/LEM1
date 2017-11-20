@@ -16,8 +16,11 @@ namespace LEM1
     public class Rules
     {
         public DataTable SourceData { get; set; }
-        public Dictionary<string,List<string>> certainRules { get; set; }
-        public Dictionary<string, List<string>> possibleRules { get; set; }
+        public Dictionary<string,List<string>> CertainRules { get; set; }
+        public Dictionary<string, List<string>> PossibleRules { get; set; }
+
+        public Dictionary<string,List<Dictionary<string,string>>> CertainRuleSet { get; set; }
+        public Dictionary<string, List<Dictionary<string, string>>> PossibleRuleSet { get; set; }
 
         private List<List<string>> aStar = new List<List<string>>();
         private Dictionary<string, List<string>> dStar = new Dictionary<string, List<string>>();
@@ -28,8 +31,10 @@ namespace LEM1
         public Rules(DataTable data)
         {
             this.SourceData = data;
-            certainRules = new Dictionary<string, List<string>>();
-            possibleRules = new Dictionary<string, List<string>>();
+            CertainRules = new Dictionary<string, List<string>>();
+            PossibleRules = new Dictionary<string, List<string>>();
+            CertainRuleSet = new Dictionary<string, List<Dictionary<string, string>>>();
+            PossibleRuleSet = new Dictionary<string, List<Dictionary<string, string>>>();
         }
         public bool CheckInitialCondition()
         {
@@ -55,19 +60,28 @@ namespace LEM1
             foreach (var lower in lowerApprox)
             {
                 KeyValuePair<string, List<string>> upper = new KeyValuePair<string, List<string>>();
+
                 if (upperApprox.ContainsKey(lower.Key))
                     upper = upperApprox.Where(t => t.Key == lower.Key).FirstOrDefault();
-                Parallel.Invoke(
-                        () =>
-                            {
-                                ComputeCovering(SourceData, lower, RuleSet.Certain);
-                            },
-                        () =>
-                            {
-                                ComputeCovering(SourceData, upper, RuleSet.Possible);
-                            }
-                        );
+
+                Parallel.Invoke(() =>
+                {
+                    ComputeCovering(SourceData, lower, RuleSet.Certain);
+                },
+                () =>
+                {
+                    ComputeCovering(SourceData, upper, RuleSet.Possible);
+                });
             }
+            Parallel.Invoke(()=>
+            {
+                ComputeRuleSetAndDrop(RuleSet.Certain);
+            },
+            ()=>
+            {
+                ComputeRuleSetAndDrop(RuleSet.Possible);
+            });
+
         }
 
         private List<List<string>> ComputeAStar(DataTable sourceData)
@@ -126,18 +140,18 @@ namespace LEM1
                     //CheckAStarLessThanDApprox(tempData, concept);
                     if (RuleSet.Certain == ruleType)
                     {
-                        if (certainRules.ContainsKey(conceptName))
-                            certainRules.Remove(conceptName);
+                        if (CertainRules.ContainsKey(conceptName))
+                            CertainRules.Remove(conceptName);
 
-                        certainRules.Add(conceptName, tempRule);
+                        CertainRules.Add(conceptName, tempRule);
                         GetNextValidSets(tempData,concept, RuleSet.Certain);
                     }
                     else
                     {
-                        if (possibleRules.ContainsKey(conceptName))
-                            possibleRules.Remove(conceptName);
+                        if (PossibleRules.ContainsKey(conceptName))
+                            PossibleRules.Remove(conceptName);
 
-                        possibleRules.Add(conceptName, tempRule);
+                        PossibleRules.Add(conceptName, tempRule);
                         GetNextValidSets(tempData,concept, RuleSet.Possible);
                     }
                     break;
@@ -205,6 +219,53 @@ namespace LEM1
                 if (same.Count > 0)
                     dStar.Add(conceptName,same);
             }
+        }
+        
+        private void ComputeRuleSetAndDrop(RuleSet ruleType)
+        {
+            if (ruleType == RuleSet.Certain)
+                CertainRuleSet = ComputeRuleSet(CertainRules,ruleType);
+            else
+                PossibleRuleSet = ComputeRuleSet(PossibleRules, ruleType);
+
+
+        }
+
+        private Dictionary<string, List<Dictionary<string, string>>> ComputeRuleSet(Dictionary<string, List<string>> rules, RuleSet ruleType)
+        {
+            Dictionary<string, List<Dictionary<string, string>>> tempRuleSet = new Dictionary<string, List<Dictionary<string, string>>>();
+            foreach (var rul in rules)
+            {
+                List<string> ids = new List<string>();
+                if (ruleType==RuleSet.Certain)
+                    lowerApprox.TryGetValue(rul.Key, out ids);
+                else
+                    upperApprox.TryGetValue(rul.Key, out ids);
+
+                var data = SourceData.Copy().AsEnumerable().Where(t => ids.Contains(t.Field<string>("ID"))).CopyToDataTable();
+
+                for (int i = 0; i < SourceData.Columns.Count; i++)
+                {
+                    if (!rul.Value.Contains(SourceData.Columns[i].ColumnName))
+                    {
+                        data.Columns.Remove(SourceData.Columns[i].ColumnName);
+                    }
+                }
+
+                var distinct = data.AsEnumerable().Distinct(DataRowComparer.Default);
+                List<Dictionary<string, string>> tempRulesetList = new List<Dictionary<string, string>>();
+                foreach (DataRow rows in distinct)
+                {
+                    Dictionary<string, string> tempSet = new Dictionary<string, string>();
+                    foreach (DataColumn col in data.Columns)
+                    {
+                        tempSet.Add(col.ColumnName, (string)rows[col]);
+                    }
+                    tempRulesetList.Add(tempSet);
+                }
+                tempRuleSet.Add(rul.Key, tempRulesetList);
+            }
+            return tempRuleSet;
         }
     }
 
