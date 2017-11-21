@@ -81,7 +81,6 @@ namespace LEM1
             {
                 ComputeRuleSetAndDrop(RuleSet.Possible);
             });
-
         }
 
         private List<List<string>> ComputeAStar(DataTable sourceData)
@@ -224,13 +223,69 @@ namespace LEM1
         private void ComputeRuleSetAndDrop(RuleSet ruleType)
         {
             if (ruleType == RuleSet.Certain)
-                CertainRuleSet = ComputeRuleSet(CertainRules,ruleType);
+            {
+                CertainRuleSet = ComputeRuleSet(CertainRules, ruleType);
+                DropConditions(CertainRuleSet);
+            }
             else
+            {
                 PossibleRuleSet = ComputeRuleSet(PossibleRules, ruleType);
+                DropConditions(PossibleRuleSet);
+            }
+        }
+        private void DropConditions(Dictionary<string, List<Dictionary<string, string>>> globalRuleSet)
+        {        
+            foreach (var rulSet in globalRuleSet)
+            {
+                var tep = new List<Dictionary<string, string>>(rulSet.Value);
+                for (int i = 0; i < rulSet.Value.Count; i++)
+                {
+                    var value = CheckDroppings(new KeyValuePair<string, Dictionary<string, string>>(rulSet.Key, rulSet.Value[i]));
+                    if (value != null)
+                        rulSet.Value[i] = value;
+                }
+            }
+        }
+        private Dictionary<string, string> CheckDroppings(KeyValuePair<string,Dictionary<string,string>> rule)
+        {
+            var last = rule.Value.Last();
+            StringBuilder qryCndtn = new StringBuilder();
+            foreach (var colData in rule.Value)
+            {
+                if (colData.Key == last.Key)
+                    qryCndtn.AppendFormat("{0} = '{1}'", colData.Key, colData.Value);
+                else
+                    qryCndtn.AppendFormat("{0} = '{1}' AND ", colData.Key, colData.Value);
+            }
+            var dcnCnt =SourceData.Select(qryCndtn.ToString()).AsEnumerable().Select(t => new { decision = t.Field<string>(t.Table.Columns.Count - 2) }).Distinct().Count();
 
+            if (dcnCnt > 1)
+                return null;
+
+            if (rule.Value.Count > 1)
+            {
+                Dictionary<string, string> temp = new Dictionary<string, string>();
+                for (int i = 0; i < rule.Value.Count; i++)
+                {
+                    var tempDict = new Dictionary<string, string>(rule.Value);
+                    tempDict.Remove(rule.Value.ElementAt(i).Key);
+                    var subRulSet = CheckDroppings(new KeyValuePair<string, Dictionary<string, string>>(rule.Key, tempDict));
+                    if (subRulSet == null)
+                    {
+                        if (i == rule.Value.Count - 1)
+                            return rule.Value;
+                        else
+                            continue;
+                    }
+                    else if (subRulSet.Count < rule.Value.Count)
+                        return subRulSet;
+                }
+            }
+            else
+                return rule.Value;
+            return null;
 
         }
-
         private Dictionary<string, List<Dictionary<string, string>>> ComputeRuleSet(Dictionary<string, List<string>> rules, RuleSet ruleType)
         {
             Dictionary<string, List<Dictionary<string, string>>> tempRuleSet = new Dictionary<string, List<Dictionary<string, string>>>();
