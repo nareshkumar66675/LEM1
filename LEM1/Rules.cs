@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace LEM1
 {
-    public enum RuleSet
+    public enum RuleType
     {
         Certain,
         Possible
@@ -19,6 +19,8 @@ namespace LEM1
         public Dictionary<string,List<string>> CertainRules { get; set; }
         public Dictionary<string, List<string>> PossibleRules { get; set; }
 
+        public bool IsConsistent { get; set; }
+
         public Dictionary<string,List<Dictionary<string,string>>> CertainRuleSet { get; set; }
         public Dictionary<string, List<Dictionary<string, string>>> PossibleRuleSet { get; set; }
 
@@ -27,6 +29,7 @@ namespace LEM1
 
         private Dictionary<string, List<string>> lowerApprox = new Dictionary<string, List<string>>();
         private Dictionary<string, List<string>> upperApprox = new Dictionary<string, List<string>>();
+        
 
         public Rules(DataTable data)
         {
@@ -38,7 +41,7 @@ namespace LEM1
         }
         public bool CheckInitialCondition()
         {
-            bool intlCondition = true;
+            IsConsistent = true;
             GetDecisions(SourceData);
             this.aStar = ComputeAStar(SourceData);
             if (CheckAStarLessThanDStar(SourceData))
@@ -48,10 +51,10 @@ namespace LEM1
             else
             {
                 Console.WriteLine("A*!<=d*");
-                intlCondition = false;
+                IsConsistent = false;
             }
             FindApproximations();
-            return intlCondition;
+            return IsConsistent;
         }
 
         public void ComputeSingleGlobalCovering()
@@ -66,40 +69,85 @@ namespace LEM1
 
                 Parallel.Invoke(() =>
                 {
-                    ComputeCovering(SourceData, lower, RuleSet.Certain);
+                    ComputeCovering(SourceData, lower, RuleType.Certain);
                 },
                 () =>
                 {
-                    ComputeCovering(SourceData, upper, RuleSet.Possible);
+                    if(!IsConsistent) 
+                        ComputeCovering(SourceData, upper, RuleType.Possible);
                 });
             }
             Parallel.Invoke(()=>
             {
-                ComputeRuleSetAndDrop(RuleSet.Certain);
+                ComputeRuleSetAndDrop(RuleType.Certain);
             },
             ()=>
             {
-                ComputeRuleSetAndDrop(RuleSet.Possible);
+                if(!IsConsistent)
+                    ComputeRuleSetAndDrop(RuleType.Possible);
             });
+        }
+
+        public string GetRuleSet(RuleType ruleType)
+        {
+            Dictionary<string, List<Dictionary<string, string>>> tempSet = new Dictionary<string, List<Dictionary<string, string>>>();
+
+            switch (ruleType)
+            {
+                case RuleType.Certain:
+                    tempSet = CertainRuleSet;
+                    break;
+                case RuleType.Possible:
+                    tempSet = PossibleRuleSet;
+                    break;
+                default:
+                    break;
+            }
+            List<string> rsltList = new List<string>();
+            var dcnName =SourceData.Columns[SourceData.Columns.Count - 2].ColumnName;
+            foreach (var rule in tempSet)
+            {
+                foreach (var item in rule.Value)
+                {
+                    var last = item.Last();
+                    StringBuilder str = new StringBuilder();
+                    foreach (var attr in item)
+                    {
+                        if (attr.Key == last.Key)
+                        {
+                            str.AppendLine(string.Format("({0}, {1}) -> ({2}, {3})", attr.Key, attr.Value, dcnName, rule.Key));
+                        }
+                        else
+                            str.AppendFormat("({0}, {1}) & ", attr.Key, attr.Value);
+                    }
+                    rsltList.Add(str.ToString());
+                }
+            }
+            return string.Join("",rsltList.Distinct().ToArray());
         }
 
         private List<List<string>> ComputeAStar(DataTable sourceData)
         {
-            DataTable temp = sourceData.Copy();
+            //DataTable temp = sourceData.Copy();
             IEqualityComparer<DataRow> comparer = new RowChecker();
             var colCount = sourceData.Columns.Count - 1;
+            
             List<List<string>> tempAStar = new List<List<string>>();
+            List<string> removedSets = new List<string>();
+            var dat = sourceData.AsEnumerable();
             //Retrieve AStar
-            foreach (var row in sourceData.AsEnumerable().Distinct(comparer))
+            foreach (var row in dat.Distinct(comparer))
             {
-                var same = temp.AsEnumerable().Where(t => comparer.Equals(t, row)).Select(t => t.Field<string>("ID")).ToList();
+                var same = dat.Where(t => comparer.Equals(t, row)).Select(t => t.Field<string>("ID")).ToList();
+                //removedSets.AddRange(same);
                 if (same.Count > 0)
                     tempAStar.Add(same);
+                
             }
             return tempAStar;
         }
 
-        private void ComputeCovering(DataTable data,KeyValuePair<string,List<string>> concept,RuleSet ruleType)
+        private void ComputeCovering(DataTable data,KeyValuePair<string,List<string>> concept,RuleType ruleType)
         {
             if (concept.Value == null || !concept.Value.Any())
                 return;
@@ -108,7 +156,7 @@ namespace LEM1
             //Update Decision Values to Naresh except for current concept
             var temp = conceptData.AsEnumerable().Where(row => concept.Value.Exists(val => val == row.Field<string>(colCount - 0))).ToList();
 
-            if (ruleType == RuleSet.Possible)
+            if (ruleType == RuleType.Possible)
             {
                 var te= temp.AsEnumerable().Where(row => row.Field<string>(colCount - 1) != concept.Key).ToList();
                 te.ForEach(t => temp.Remove(t));
@@ -118,7 +166,7 @@ namespace LEM1
                 ForEach(v => v.SetField(colCount - 1, "NARESH"));
             GetNextValidSets(conceptData,concept, ruleType);
         }
-        private void GetNextValidSets(DataTable data, KeyValuePair<string, List<string>> concept, RuleSet ruleType)
+        private void GetNextValidSets(DataTable data, KeyValuePair<string, List<string>> concept, RuleType ruleType)
         {
             var colCount = data.Columns.Count - 1;
             if (colCount == 3)
@@ -137,13 +185,13 @@ namespace LEM1
                     var conceptName = concept.Key; //tempData.AsEnumerable().Select(t => t[tempColCount - 1]).Distinct().ToList()
                         //.OfType<string>().Where(v=>v!="NARESH").FirstOrDefault();
                     //CheckAStarLessThanDApprox(tempData, concept);
-                    if (RuleSet.Certain == ruleType)
+                    if (RuleType.Certain == ruleType)
                     {
                         if (CertainRules.ContainsKey(conceptName))
                             CertainRules.Remove(conceptName);
 
                         CertainRules.Add(conceptName, tempRule);
-                        GetNextValidSets(tempData,concept, RuleSet.Certain);
+                        GetNextValidSets(tempData,concept, RuleType.Certain);
                     }
                     else
                     {
@@ -151,7 +199,7 @@ namespace LEM1
                             PossibleRules.Remove(conceptName);
 
                         PossibleRules.Add(conceptName, tempRule);
-                        GetNextValidSets(tempData,concept, RuleSet.Possible);
+                        GetNextValidSets(tempData,concept, RuleType.Possible);
                     }
                     break;
                 }
@@ -193,11 +241,9 @@ namespace LEM1
             IEqualityComparer<DataRow> comparer = new RowChecker();
             var colCount = data.Columns.Count-1;
             bool intlCndtn = true;
-
-            //Retrieve AStar
-            var tempAstar =  ComputeAStar(data);
+            
             //Check A*<=d*
-            foreach (var sets in tempAstar)
+            foreach (var sets in this.aStar)
             {
                 var diff = data.AsEnumerable().Where(row => sets.Exists(val => val == row.Field<string>(colCount))).
                     Select(decisionName => decisionName.Field<string>(colCount - 1)).Distinct().ToList();
@@ -220,9 +266,9 @@ namespace LEM1
             }
         }
         
-        private void ComputeRuleSetAndDrop(RuleSet ruleType)
+        private void ComputeRuleSetAndDrop(RuleType ruleType)
         {
-            if (ruleType == RuleSet.Certain)
+            if (ruleType == RuleType.Certain)
             {
                 CertainRuleSet = ComputeRuleSet(CertainRules, ruleType);
                 DropConditions(CertainRuleSet);
@@ -253,9 +299,9 @@ namespace LEM1
             foreach (var colData in rule.Value)
             {
                 if (colData.Key == last.Key)
-                    qryCndtn.AppendFormat("{0} = '{1}'", colData.Key, colData.Value);
+                    qryCndtn.AppendFormat("[{0}] = '{1}'", colData.Key, colData.Value);
                 else
-                    qryCndtn.AppendFormat("{0} = '{1}' AND ", colData.Key, colData.Value);
+                    qryCndtn.AppendFormat("[{0}] = '{1}' AND ", colData.Key, colData.Value);
             }
             var dcnCnt =SourceData.Select(qryCndtn.ToString()).AsEnumerable().Select(t => new { decision = t.Field<string>(t.Table.Columns.Count - 2) }).Distinct().Count();
 
@@ -286,13 +332,13 @@ namespace LEM1
             return null;
 
         }
-        private Dictionary<string, List<Dictionary<string, string>>> ComputeRuleSet(Dictionary<string, List<string>> rules, RuleSet ruleType)
+        private Dictionary<string, List<Dictionary<string, string>>> ComputeRuleSet(Dictionary<string, List<string>> rules, RuleType ruleType)
         {
             Dictionary<string, List<Dictionary<string, string>>> tempRuleSet = new Dictionary<string, List<Dictionary<string, string>>>();
             foreach (var rul in rules)
             {
                 List<string> ids = new List<string>();
-                if (ruleType==RuleSet.Certain)
+                if (ruleType==RuleType.Certain)
                     lowerApprox.TryGetValue(rul.Key, out ids);
                 else
                     upperApprox.TryGetValue(rul.Key, out ids);
@@ -328,9 +374,17 @@ namespace LEM1
     {
         public override bool Equals(DataRow row1, DataRow row2)
         {
-            var value1 = row1.ItemArray.ToList();
-            var value2 = row2.ItemArray.ToList();
-            return value1.GetRange(0, value1.Count - 2).SequenceEqual(value2.GetRange(0, value2.Count - 2));
+            int cnt = row1.Table.Columns.Count;
+            for (int i = 0; i < cnt-2; i++)
+            {
+                if ((string)row1[i] != (string)row2[i])
+                    return false;
+            }
+            return true;
+            //var value1 = row1.ItemArray.ToList();
+            //var value2 = row2.ItemArray.ToList();
+            
+            //return value1.GetRange(0, value1.Count - 2).SequenceEqual(value2.GetRange(0, value2.Count - 2));
         }
         public override int GetHashCode(DataRow obj)
         {

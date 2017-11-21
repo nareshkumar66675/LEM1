@@ -20,6 +20,7 @@ namespace LEM1
                     string line = string.Empty;
                     while ((line = sr.ReadLine()) != null)
                     {
+                        if(!string.IsNullOrWhiteSpace(line))
                         switch (line[0])
                         {
                             case '<':
@@ -51,7 +52,7 @@ namespace LEM1
         }
         private static void ParseLine(string line, DataTable data)
         {
-            var values = line.Trim().Split(new char[0]).ToList();
+            var values = line.Trim().Split(new char[0],StringSplitOptions.RemoveEmptyEntries).ToList();
             values.Add(data.Rows.Count + 1+"");
 
             if (values.Count == data.Columns.Count)

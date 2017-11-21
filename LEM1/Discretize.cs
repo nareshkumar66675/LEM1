@@ -70,12 +70,20 @@ namespace LEM1
                 {
                     List<DataColumn> tempColns = new List<DataColumn>();
                     List<float> values = new List<float>();
-                    data.AsEnumerable()
-                        .ToList().ForEach(r =>
-                        {
-                            if (float.TryParse(r.Field<string>(item.ColumnName), out float i))
-                                values.Add(i);
-                        });
+                    var t = data.AsEnumerable().ToList();
+                    for (int i = 0; i < t.Count; i++)
+                    {
+                        if (float.TryParse((string)t[i][item.ColumnName], out float val))
+                            values.Add(val);
+                        else
+                            return rsltData;
+                    }
+                    //data.AsEnumerable()
+                    //    .ToList().ForEach(r =>
+                    //    {
+                    //        if (float.TryParse(r.Field<string>(item.ColumnName), out float i))
+                    //            values.Add(i);
+                    //    });
                     if (values.Count == data.Rows.Count)
                     {
                         var indx = data.Columns.IndexOf(item);
